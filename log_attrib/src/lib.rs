@@ -1,5 +1,5 @@
 // #[log(INFO)]
-// async fn foo(a: i32, b: i32) {...}
+// (async)? fn foo(a: i32, b: i32) { ... }
 //
 // into
 //
@@ -18,10 +18,17 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{parse::Parse, parse_macro_input};
 
-#[derive(Debug)]
+#[cfg_attr(all(debug_assertions, feature = "extra-debug"), derive(Debug))]
 struct LoggedFn {
     level: LogLevel,
     function: syn::ItemFn,
+}
+
+#[cfg(not(all(debug_assertions, feature = "extra-debug")))]
+impl std::fmt::Debug for LoggedFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoggedFn").finish()
+    }
 }
 
 impl ToTokens for LoggedFn {
