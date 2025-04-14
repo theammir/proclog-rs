@@ -1,0 +1,10 @@
+[package]
+name = "proclog"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log_attrib = {path = "log_attrib"}
+
+[dev-dependencies]
+futures = "*"
