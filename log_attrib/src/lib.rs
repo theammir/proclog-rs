@@ -1,16 +1,28 @@
 // #[log(INFO)]
-// (async)? fn foo(a: i32, b: i32) { ... }
+// (async)? fn foo(a: i32, b: i32) -> Result<i32, ()> { ... }
 //
 // into
 //
-// (async)? fn foo(a: i32, b: i32) -> i32 {
+// match_result: (if ReturnType ends with "Result", I guess)
+//     match result {
+//         // if level < ERROR
+//         ::core::result::Result::Ok(_) => println!("[#level] foo({args}) = {result:?}"),
+//         ::core::result::Result::Err(_) => println!("[ERROR] foo({args}) =  {result:?}"),
+//     };
+//
+//  print_value: (otherwise)
+//      // if level < ERROR
+//      println!("[#level] foo({args}) = {result:?}");
+//
+// (async)? fn bar(a: i32, b: i32) -> Result<i32, ()> {
 //     let args = [format!("{:?}", a), format!("{:?}", b)]
 //         .iter()
 //         .cloned()
 //         .reduce(|acc, arg| format!("{acc}, {arg}"))
 //         .unwrap_or(String::new());
-//     let result = (#optional_async || { ... })()#optional_await;
-//     println!("[INFO] foo({a:?}, {b:?}) = {result:?}");
+//     let result = ((async)? || { ... })()(.await)?;
+//     #match_result
+//     #print_value
 //     result
 // }
 
@@ -54,6 +66,40 @@ impl ToTokens for LoggedFn {
         let optional_async = (new_fn.sig.asyncness.is_some()).then(|| quote! { async });
         let optional_await = (new_fn.sig.asyncness.is_some()).then(|| quote! { .await });
 
+        let returntype_path = (match &new_fn.sig.output {
+            syn::ReturnType::Default => None,
+            syn::ReturnType::Type(_, ty) => Some(ty),
+        })
+        .and_then(|ty| match &**ty {
+            syn::Type::Path(syn::TypePath { qself: _, path }) => Some(path),
+            _ => None,
+        });
+
+        let match_result = returntype_path
+            .map(|path| path.segments.last().unwrap().ident.to_string())
+            .is_some_and(|ty| ty == "Result")
+            .then(|| {
+                let ok_arm = (self.level < LogLevel::Error)
+                    .then(|| {
+                        quote! { ::core::result::Result::Ok(_) => println!(
+                            "[{}] {}({args}) = {result:?}",
+                            #level, #fn_name
+                            )
+                        }
+                    })
+                    .unwrap_or(quote! { _ => {} });
+                quote! {
+                    match result {
+                        ::core::result::Result::Err(_) => println!(
+                            "[ERROR] {}({args}) = {result:?}", #fn_name
+                        ),
+                        #ok_arm,
+                    };
+                }
+            });
+        let print_value = (match_result.is_none() && self.level < LogLevel::Error)
+            .then(|| quote! { println!("[{}] {}({args}) = {result:?}", #level, #fn_name); });
+
         let new_body: syn::Block = syn::parse2(quote! {
             {
                 let args = [#(format!("{:?}", #fn_args).to_string(),)*]
@@ -63,7 +109,8 @@ impl ToTokens for LoggedFn {
                     .unwrap_or(String::new());
 
                 let result = (#optional_async || #fn_body)()#optional_await;
-                println!("[{}] {}({args}) = {result:?}", #level, #fn_name);
+                #match_result
+                #print_value
                 result
             }
         })
@@ -74,7 +121,7 @@ impl ToTokens for LoggedFn {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum LogLevel {
     Debug,
     Info,

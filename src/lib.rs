@@ -20,6 +20,36 @@ mod tests {
     }
 
     #[test]
+    fn error_level_no_result() {
+        #[log_attrib::log(ERROR)]
+        fn return_back(a: u32) -> u32 {
+            a
+        }
+
+        println!("Shouldn't print anything after this.");
+        assert_eq!(return_back(1), 1);
+    }
+
+    #[test]
+    fn return_result() {
+        #[log_attrib::log(ERROR)]
+        fn sqrt_err(a: i32) -> Result<i32, ()> {
+            i32::checked_isqrt(a).ok_or(())
+        }
+
+        #[log_attrib::log(INFO)]
+        fn sqrt_ok(a: i32) -> Result<i32, ()> {
+            i32::checked_isqrt(a).ok_or(())
+        }
+
+        assert_eq!(sqrt_err(-2), Err(())); // logged
+        assert_eq!(sqrt_err(4), Ok(2)); // not logged
+
+        assert_eq!(sqrt_ok(-2), Err(())); // logged
+        assert_eq!(sqrt_ok(4), Ok(2)); // logged
+    }
+
+    #[test]
     fn unsafe_generic() {
         #[log_attrib::log(DEBUG)]
         unsafe fn unsafe_unwrap<T: Debug, E: Debug>(a: Result<T, E>) -> T {
@@ -30,7 +60,7 @@ mod tests {
 
     #[test]
     fn try_op() {
-        #[log_attrib::log(ERROR)]
+        #[log_attrib::log(DEBUG)]
         fn try_inner(o: Option<i32>) -> Option<i32> {
             Some(o? + 2)
         }
